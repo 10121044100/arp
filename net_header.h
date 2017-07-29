@@ -19,6 +19,9 @@ typedef unsigned int	DWORD;
 #define ETHER_ADDR_LEN      0x6
 #endif
 
+#ifndef IP_ADDR_LEN
+#define IP_ADDR_LEN	    0x4
+#endif
 /**   
 * The libnet error buffer is 256 bytes long.
     */ 
@@ -41,7 +44,7 @@ typedef unsigned int	DWORD;
  *  Address Resolution Protocol
  *  Base header size: 8 bytes
  */
-struct libnet_arp_hdr
+typedef struct libnet_arp_hdr
 {
     u_int16_t ar_hrd;         /* format of hardware address */
 #define ARPHRD_NETROM   0   /* from KA9Q: NET/ROM pseudo */
@@ -69,18 +72,18 @@ struct libnet_arp_hdr
 #define ARPOP_INVREQUEST 8  /* req to identify peer */
 #define ARPOP_INVREPLY   9  /* resp identifying peer */
     /* address information allocated dynamically */
-};
+} arp_hdr, *parp_hdr;
 
 /*
  *  Ethernet II header
  *  Static header size: 14 bytes
  */
-struct libnet_ethernet_hdr
+typedef struct libnet_ethernet_hdr
 {
     u_int8_t  ether_dhost[ETHER_ADDR_LEN];/* destination ethernet address */
     u_int8_t  ether_shost[ETHER_ADDR_LEN];/* source ethernet address */
     u_int16_t ether_type;                 /* protocol */
-};
+} ether_hdr, *pether_hdr;
 
 #ifndef ETHERTYPE_PUP
 #define ETHERTYPE_PUP           0x0200  /* PUP protocol */
