@@ -27,6 +27,7 @@ typedef unsigned int	DWORD;
     */ 
 #define ERRBUF_SIZE      0x100
 
+#define ETHER_ADDRSTRLEN 0x12
 //////////////////////////////////////////////////////////////////////////
 
 /**

