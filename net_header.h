@@ -75,6 +75,18 @@ typedef struct libnet_arp_hdr
 } arp_hdr, *parp_hdr;
 
 /*
+ *  ARP Data
+ *  Size : 20 bytes
+ */
+typedef struct arp_data
+{
+    u_int8_t  sender_ha[ETHER_ADDR_LEN];
+    u_int32_t sender_ip;
+    u_int8_t  target_ha[ETHER_ADDR_LEN];
+    u_int32_t target_ip;
+} arp_data, *parp_data;
+
+/*
  *  Ethernet II header
  *  Static header size: 14 bytes
  */
