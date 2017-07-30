@@ -104,7 +104,7 @@ int normal_arp(pcap_t *handle, const char* smac, const char* sip, char* tmac, co
 
 /*
  *  arp_infection
- *  return : true(1), false(0)
+ *  return : X
  *  infect arp request
  */
 void arp_infection(pcap_t *handle, const char* my_mac, const char* tip, const char* smac, const char* sip) {
